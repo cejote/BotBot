@@ -2,9 +2,10 @@
 # -*- coding: UTF-8 -*-
 
 import sys
+import os
 import random
 from math import sqrt
-
+import operator
 
 DEFAULT_OFFER = 500
 REPLY_POSITIVE = 'JA'
@@ -34,7 +35,13 @@ class Bot:
 
     def process_offer(self, offer):
         """ Evaluate offer and send reply """
-        reply = REPLY_POSITIVE
+        #reply = REPLY_POSITIVE
+        
+        if offer < 300:
+            reply = REPLY_NEGATIVE
+        else:
+            reply = REPLY_POSITIVE
+            
         self.offers.append((offer, reply))
         return reply
 
@@ -100,7 +107,7 @@ class cjtbot1(Bot):
 
         MAX_BRAIN=100
         MIN_BRAIN=25
-        SWITCH_BEHAV=47
+        SWITCH_BEHAV=100
         DEFAULT_OFFER=300
         
         if self.n_rounds<=SWITCH_BEHAV:
@@ -110,33 +117,67 @@ class cjtbot1(Bot):
             #start with some test balloons without attracting attention 
             
             #TODO: using gaussians?
+            #TODO: sampling via bisection method!
             offer = random.randint(0, 19)*25 #in 25 schritten von 0 bis 475
                 
 
         else:
             self.logfile.write("------------------------------\n")
-            self.logfile.write(": %s\t" % self.cur_round)
+            self.logfile.write(": RUNDE %s\n" % self.cur_round)
 
            
             #precalc based on dynamic history aka "brain"
-            brain=[x for x in self.my_offers if x[1] == "JA"]
-            length=max(min(len(brain), int(self.var), MAX_BRAIN), MIN_BRAIN) #if var=0 or too large, limit length to [MIN_BRAIN,MAX_BRAIN] entries
+            #~ brain=[x for x in self.my_offers if x[1] == "JA"]
+
+            #~ length=max(min(len(brain), int(self.var), MAX_BRAIN), MIN_BRAIN) #if var=0 or too large, limit length to [MIN_BRAIN,MAX_BRAIN] entries
             
             
-            brain=brain[-length:]
+            #~ brain=brain[-length:]
+            length=22
+            
+            brain22=self.my_offers[-length:]
                     
-            for (a,b) in brain:
+            for (a,b) in brain22:
                 self.logfile.write('%s %s\n' % (a, b))
             
 
             #get mean and stdev
-            (self.std, self.var)=statistics([x[0] for x in brain])
-            self.logfile.write("=== brain: %s # µ=%s o=%s ===\n" % (len(brain), self.std, self.var))
+            #~ (self.std, self.var)=statistics([x[0] for x in brain])
+            #~ self.logfile.write("=== brain: %s # µ=%s o=%s ===\n" % (len(brain), self.std, self.var))
 
-            offer = upperquartil(brain)
-            self.logfile.write("=== quart: %s " % offer)
+
+
+#def suggest(llim, hlim, step)
+            maxscore=0
+            maxval=0
             
-            self.logfile.write(": %s\n" % offer)
+            step=50
+            for xa in xrange(0,500,step):
+                hist=[x for x in self.my_offers[-length:] if xa<=x[0]<xa+step]
+                #~ for (a,b) in hist:
+                    #~ self.logfile.write('>> %s    %s %s\n' % (xa, a, b))    
+
+                total=0.0+sum([x[0] for x in hist])
+                if total>0:
+                    dd=0.0+sum([x[0] for x in hist if x[1]=="JA"])/total
+                else:
+                    dd=0
+
+
+                if (500.0-xa)*dd>=maxscore:
+                    maxscore=500.0-xa
+                    maxval=xa
+                    
+                #~ self.logfile.write(' = %s\n' % dd)    
+                #~ self.logfile.write("---\n")
+
+            
+            self.logfile.write('=> %s = %s\n' % (maxscore, maxval)) 
+
+
+            offer = maxval #+random.randint(0, 100)-50
+            
+            self.logfile.write(": ANGEBOT %s\n" % offer)
 
 
             
@@ -157,6 +198,21 @@ class cjtbot1(Bot):
 
 
 
+
+
+
+def maxexpect(vallist):
+
+    if len(vallist)==0:
+        return 500
+    
+    a=0
+    b=a+50
+    brain=[x for x in self.my_offers if a<=x[0]<b]
+
+    
+
+    return 0
 
 
 
@@ -196,10 +252,13 @@ def upperquartil(vallist):
 
 
 def main(argv):
-
+    if "sadistiker" in argv:
+        the_bot = cjtbot1()
+    if "statiker" in argv:
+        the_bot = cjtbot0()
     #~ logfile = open('csbot_logfile.txt', 'w')
     #~ the_bot = Bot()
-    the_bot = cjtbot1()
+    
     
     while True:
         next = sys.stdin.readline()
