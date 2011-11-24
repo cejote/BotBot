@@ -10,10 +10,6 @@
 #~ semirandom - Angebot: zufaellig zwischen 0 und 500; Annahme: ab 500 sicher, zufaellig darunter
 
 
-
-
-
-
 import sys
 import os
 import random
@@ -33,8 +29,10 @@ class Bot:
         self.oppopoints_added = 0
         self.points_added = 0
 
+        self.points_ratio = 0
+
         self.logfile = open('bot_logfile.txt', 'w+a')
-        self.logfile.write("\n\n\n ====== %s ====== \n\n" % self.__class__.__name__)
+        self.logfile.write("\n ====== %s ====== \n\n" % self.__class__.__name__)
 
         return None
 
@@ -44,6 +42,7 @@ class Bot:
     
     def set_cur_round(self, r):
         self.cur_round = r
+        self.logfile.write("\n=========: RUNDE %s :=========\n" % self.cur_round)    
         return None
 
     def process_offer(self, offer):
@@ -67,23 +66,19 @@ class Bot:
         """ Evaluate reply to latest offer """
         self.logfile.write("%s %s\n" % (self.last_offer, reply))
         self.my_offers.append((self.last_offer, reply))
-
-
-
         return None
 
     def receive_points(self, points):
         self.points.append(points)
-        self.points_added += points
-        self.oppopoints_added += 1000-points
+        self.points_added  += points
+        
+        #assuming that I would never ever would touch offers of 0 bucks...
+        if points>0:
+            self.oppopoints_added += 1000-points
 
-#############
-        pointstats=sum(self.points)/(self.cur_round*500.0)
-        self.logfile.write(": XXX punkteverhältniss %s\t%s : %s\t%s\n" % (pointstats, sum(self.points), 
-        self.oppopoints_added,
-        (self.cur_round*1000.0)))
-#############
+        self.points_ratio = self.points_added / (0.0+self.oppopoints_added+self.points_added)
 
+        self.logfile.write(": punkteverhältniss %s\t(%s : %s)\n" % (self.points_ratio,self.points_added,self.oppopoints_added))
         return None
     
     def postprocess(self):
@@ -125,6 +120,8 @@ class cjtbot1(Bot):
         self.std = 300
         self.var = 100
         
+        self.BOT_ACCEPTS_RANDOM=False    
+        self.BOT_SENDS_RANDOM=False
        
         self.deny=False
         self.spreading = 50
@@ -141,9 +138,10 @@ class cjtbot1(Bot):
         DEFAULT_OFFER=300
 
 
-        self.logfile.write("-------------: RUNDE %s  -----------\n" % self.cur_round)        
 
-
+        if self.BOT_ACCEPTS_RANDOM:
+            #ok, so 50% for anything I do...
+            offer = 0   #let them eat cake!
         
         if self.deny:
             #recalcitrant...
@@ -164,7 +162,7 @@ class cjtbot1(Bot):
             offer=501
             self.logfile.write("501\n")
         elif self.cur_round<6:
-            #send 2 times an offer such that he would win 1 per round
+            #send 2 times a neutral offer
             offer=500
             self.logfile.write("500\n")
         
@@ -214,15 +212,15 @@ class cjtbot1(Bot):
             #   wenn ich das kann
             #   sonst weniger großzuügig annehmen
             #   oder beides gleichzeitig?
+            #   oder blockiert der die ganze Zeit, egal was ich mache?
 
             
+           
+            spreading=50
+            (offer,mean,stdv, bar) = maxexpect(self.offers, 1, 900, spreading, self.logfile)
+            self.BOT_ACCEPTS_RANDOM =  self.BOT_ACCEPTS_RANDOM and bar #avoid falling back in a unlikely case of bad luck
             
-            
-            checks = maxexpect(self.my_offers, 1, 600, self.spreading, self.logfile)
-            offer=checks[0]
-            #+random.randint(0, 100)-50
-
-            self.logfile.write(": stats %s\t%s\n" % (checks[1], checks[2]))
+            #self.logfile.write(": stats %s\t%s\n" % (mean,stdv))
             
         self.logfile.write(": ANGEBOT %s\n" % offer)
 
@@ -243,19 +241,35 @@ class cjtbot1(Bot):
     def process_offer(self, offer):
         """ Evaluate offer and send reply """
 
+        self.logfile.write("-- got offer: %s --\n" % offer)    
 
-        
-        if offer > 500:
+
+        #that's always fine
+        if offer >= 500:
+            self.logfile.write("CASE 1: >500\n")
             reply = REPLY_POSITIVE
-        else:
+
+        #is it me paying all the time?
+        #elif self.points_ratio<0.45 :
+        elif self.oppopoints_added-self.points_added>1000:
+            self.logfile.write("CASE 2: exploiting me - %s\n" % self.points_ratio)
             reply = REPLY_NEGATIVE
+        else:
+            
+
+#            (offer,mean,stdv, bsr) = maxexpect(self.my_offers, 1, 600, self.spreading, self.logfile)
+#            self.BOT_SENDS_RANDOM =  self.BOT_ACCEPTS_RANDOM and bsr #avoid falling back in a unlikely case of bad luck
+#            self.logfile.write(" %s %s       %s--\n" % (mean,stdv, bsr))
+
             #TODO: to be implemented...
 
-        reply = REPLY_POSITIVE
+
+            reply = REPLY_POSITIVE
        
-            # sendet der nur zufallswerte?
-            # oder sendet der immer den gleichen wert?
-            # wenn ich ein paar mal ablehne - wird dann die varianz größer? - lohnt sich eine interaktion?
+            #1 sendet der nur zufallswerte?
+            #2 oder sendet der immer den gleichen wert?
+            #3 ist es mehr als ich durchschnittlich einstecke?
+            #5 wenn ich ein paar mal ablehne - wird dann die varianz größer? - lohnt sich eine interaktion?
 
         self.logfile.write("%s %s\n" % (offer, reply))        
 
@@ -276,15 +290,18 @@ class cjtbot1(Bot):
 
 
 def maxexpect(data, lrange, urange, step, logfile):
-    maxscore=0
-    maxval=0
+    maxscore=0.0
+    maxval=0.0
     
+    BOT_IS_RANDOM=False
 
-    s2 = 0
-    s = 0
+    s2 = 0.0
+    s = 0.0
     N=0
     t=0
 
+
+    histvalues={}
 
     for lim in xrange(lrange, urange, step):
         hist=[x for x in data if lim<=x[0]<lim+step]
@@ -298,9 +315,21 @@ def maxexpect(data, lrange, urange, step, logfile):
 
         logfile.write(": hist %s\t%s\t%s\n" % (lim, expect, e))
 
+        if lim==lrange:
+            if abs(0.5-expect) < 0.1:
+                logfile.write("RANDOM!!!! *******\n")
+                BOT_IS_RANDOM=True
+                return (maxval, 0, 0, True)
+
+
+        #do not cosider hell...
         if lim>500 and maxscore>0:
             break
-            
+
+
+        histvalues[lim]=expect
+
+        
         s2 += expect*expect
         s += expect
         N+=1
@@ -309,12 +338,19 @@ def maxexpect(data, lrange, urange, step, logfile):
             maxscore=e
             maxval=lim
 
+    (a,b)=statistics(histvalues)
+
+
+
+########################
     mean = s/N
     sdev = sqrt((s2-(s*s)/N) /N)
+    
+    logfile.write(" %s  %s    %s %s*****\n" % (a,mean, b, sdev))
+##########################
 
-    logfile.write(": statsttstststs %s\t%s\n" % (mean, sdev))
-
-    return (maxval, mean, sdev)
+    
+    return (maxval, mean, sdev, BOT_IS_RANDOM)
 
 
 
@@ -322,9 +358,9 @@ def maxexpect(data, lrange, urange, step, logfile):
 def statistics(vallist):
     if len(vallist)==0:
         return (0,0)
-    s2 = 0
-    s = 0
-    N=len(vallist)
+    s2 = 0.0
+    s = 0.0
+    N=0.0+len(vallist)
     
     for e in vallist:
         s += e
