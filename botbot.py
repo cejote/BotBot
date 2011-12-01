@@ -1,19 +1,34 @@
 #!/usr/bin/python
 # -*- coding: UTF-8 -*-
 
+'''
+<< cjtbot1 >>   v0.2
+
+**********
+2011-11-30
 
 
-#~ gegebene Strategien: 
-#~ simple - Angebot: 250; Annahme: ab 250
-#~ more - Angebot: 499; Annahme: ab 501
-#~ random - Angebot: zufaellig; Annahme: zufaellig
-#~ semirandom - Angebot: zufaellig zwischen 0 und 500; Annahme: ab 500 sicher, zufaellig darunter
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program. If not, see <http://www.gnu.org/licenses/>. 
+'''
+
 
 
 import sys
 import os
 import random
 from math import sqrt
+
 
 DEFAULT_OFFER = 500
 REPLY_POSITIVE = 'JA'
@@ -25,14 +40,11 @@ class Bot:
         self.cur_round = 0
         self.offers = []
         self.my_offers = []
-        self.points = [] #brauchen wir wohl nicht
         self.oppopoints_added = 0
         self.points_added = 0
 
         self.points_ratio = 0
-
-        self.logfile = open('bot_logfile.txt', 'w+a')
-        self.logfile.write("\n ====== %s ====== \n\n" % self.__class__.__name__)
+        self.points_xratio = 0
 
         return None
 
@@ -42,14 +54,12 @@ class Bot:
     
     def set_cur_round(self, r):
         self.cur_round = r
-        self.logfile.write("\n=========: RUNDE %s :=========\n" % self.cur_round)    
         return None
 
     def process_offer(self, offer):
         """ Evaluate offer and send reply """
-        #reply = REPLY_POSITIVE
         
-        if offer < 300:
+        if offer < 170:
             reply = REPLY_NEGATIVE
         else:
             reply = REPLY_POSITIVE
@@ -64,46 +74,31 @@ class Bot:
 
     def process_reply(self, reply):
         """ Evaluate reply to latest offer """
-        self.logfile.write("%s %s\n" % (self.last_offer, reply))
         self.my_offers.append((self.last_offer, reply))
         return None
 
     def receive_points(self, points):
-        self.points.append(points)
+        #self.points.append(points)
         self.points_added  += points
         
         #assuming that I would never ever would touch offers of 0 bucks...
         if points>0:
-            self.oppopoints_added += 1000-points
+            self.oppopoints_added += 1000.0-points
 
-        self.points_ratio = self.points_added / (0.0+self.oppopoints_added+self.points_added)
+        if (self.oppopoints_added+self.points_added)>0:
+            #self.points_ratio = self.points_added / (0.0+self.oppopoints_added+self.points_added)
+            self.points_xratio=self.points_added/(0.0+self.oppopoints_added+self.points_added)
+            self.points_ratio=(self.oppopoints_added-self.points_added)/(0.0+self.cur_round)
+        else:
+            #TODO: ok so???
+            self.points_ratio=0
 
-        self.logfile.write(": punkteverhältniss %s\t(%s : %s)\n" % (self.points_ratio,self.points_added,self.oppopoints_added))
         return None
     
     def postprocess(self):
-        """ !!! """
-
-        self.logfile.write(": letzter stand: %s = %s\t%s \n" % (sum(self.points), self.points_added, self.oppopoints_added))
-
-
-        self.logfile.close()
+        """ RIP. """
         return None
     
-
-
-
-
-class cjtbot0(Bot):
-    """
-    uses static optimum and never defects
-    """ 
-    def make_offer(self):
-        """ find optimal value """
-        offer = 300
-        self.last_offer = offer
-        return '%s' % self.last_offer  
-
 
 
 
@@ -117,14 +112,11 @@ class cjtbot1(Bot):
     def __init__(self):
         Bot.__init__(self)
 
-        self.std = 300
-        self.var = 100
-        
-        self.BOT_ACCEPTS_RANDOM=False    
         self.BOT_SENDS_RANDOM=False
-       
-        self.deny=False
-        self.spreading = 50
+        self.currentOffer=512
+        self.lastGoodOffer=1024
+        self.lastBadOffer=0
+             
         return None
 
 
@@ -132,105 +124,72 @@ class cjtbot1(Bot):
     def make_offer(self):
         """ find optimal value to send"""
 
-        MAX_BRAIN=100
-        MIN_BRAIN=25
-        SWITCH_BEHAV=100
-        DEFAULT_OFFER=300
 
+        # 510 = 10 minus for me, +10 for him.
+        # Bids < 490
+        RATIO_LIMIT=100
+        XRATIO_LIMIT=0.48
+        BRAIN=20
 
-
-        if self.BOT_ACCEPTS_RANDOM:
-            #ok, so 50% for anything I do...
-            offer = 0   #let them eat cake!
         
-        if self.deny:
-            #recalcitrant...
-            offer = 500
-        
-        
-        elif self.n_rounds<=SWITCH_BEHAV:
-            #too short game for goods statistics
-            offer = DEFAULT_OFFER
-        
-        #start with some interesting offers that are unlikely to be part of the random sampling
-        elif self.cur_round<2:
-            #send 2 times an offer such that he would win 10bucks per round
-            offer=510
-            self.logfile.write("510\n")            
-        elif self.cur_round<4:
-            #send 2 times an offer such that he would win 1 per round
-            offer=501
-            self.logfile.write("501\n")
-        elif self.cur_round<6:
-            #send 2 times a neutral offer
-            offer=500
-            self.logfile.write("500\n")
-        
-        #now send some test balloons without attracting attention until we reach the era of SWITCH_BEHAV
-        elif self.cur_round<SWITCH_BEHAV:
-            #TODO: using gaussians?
-            #TODO: sampling via bisection method!
-            offer = random.randint(0, 19)*25 #in 25 schritten von 0 bis 475
-                
-        #and finally, send what we learned
-        else:
+        offer=self.currentOffer
+
+        # backup
+        if self.cur_round>50 and (self.points_ratio>RATIO_LIMIT or self.points_xratio<XRATIO_LIMIT):
+            offer=500 # stop exploiting me
 
 
-           
-            #precalc based on dynamic history aka "brain"
-            #~ brain=[x for x in self.my_offers if x[1] == "JA"]
+        #~ if self.BOT_ACCEPTS_RANDOM:
+            #~ #ok, so 50% for anything I do...
+            #~ offer = 0   #let them eat cake!
 
-            #~ length=max(min(len(brain), int(self.var), MAX_BRAIN), MIN_BRAIN) #if var=0 or too large, limit length to [MIN_BRAIN,MAX_BRAIN] entries
+
+        # whohooo?!
+        elif self.currentOffer>512:
+            offer=512
+
+
+        # bisection...
+        elif not (self.cur_round%BRAIN):
+            #~ check last BRAIN reactions
+            replies=self.my_offers[-BRAIN:]
             
+            val=len([x for x in replies if x[1]==REPLY_POSITIVE])/(0.0+BRAIN)
+            #self.tested[self.currentOffer]= val
+
             
-            #~ brain=brain[-length:]
-            #~ length=len(self.my_offers)
-            
-            #~ brain22=self.my_offers[-length:]
+            # as time goes by... am I still at the optimum?
+            if not self.cur_round%(BRAIN*20):
+                # set values for starting with 512
+                self.currentOffer=1024
+                self.lastGoodOffer=2048
+                self.lastBadOffer=0
+                val=5   # force re-check
+
+
+            # offers accepted
+            if val>=0.2:
+
+                # avoid too small steps
+                if (self.lastGoodOffer-self.lastBadOffer)>10:
+                    self.lastGoodOffer=self.currentOffer
+                    self.currentOffer=round(self.currentOffer-((self.lastGoodOffer-self.lastBadOffer)/2.0))
+                else:
+                    pass
                     
-            #~ for (a,b) in brain22:
-                #~ self.logfile.write('%s %s\n' % (a, b))
-            
+            else:
+                # avoid too small steps - and fall back to last known optimum
+                if (self.lastGoodOffer-self.lastBadOffer)>10:
+                    self.lastBadOffer=self.currentOffer  # remember, remember
+                    self.currentOffer=round(self.currentOffer+((self.lastGoodOffer-self.lastBadOffer)/2.0))
+                else:
+                    self.currentOffer = self.lastGoodOffer
+                
+        offer=self.currentOffer
+        # end bisection
 
-            #get mean and stdev
-            #~ (self.std, self.var)=statistics([x[0] for x in brain])
-            #~ self.logfile.write("=== brain: %s # µ=%s o=%s ===\n" % (len(brain), self.std, self.var))
-
-            #~ data = self.my_offers[-length:]
-            #~ hist=[x for x in data if lim<=x[0]<lim+step]
-#~ 
-            #~ for (a,b) in hist:
-                #~ self.logfile.write('>> %s    %s %s\n' % (lim, a, b))  
-                        
-            
-            
-            
-            
-            
-            
-            # TODO: wenn mein score zu schlecht wird, dann weniger bieten
-            #   wenn ich das kann
-            #   sonst weniger großzuügig annehmen
-            #   oder beides gleichzeitig?
-            #   oder blockiert der die ganze Zeit, egal was ich mache?
-
-            
-           
-            spreading=50
-            (offer,mean,stdv, bar) = maxexpect(self.offers, 1, 900, spreading, self.logfile)
-            self.BOT_ACCEPTS_RANDOM =  self.BOT_ACCEPTS_RANDOM and bar #avoid falling back in a unlikely case of bad luck
-            
-            #self.logfile.write(": stats %s\t%s\n" % (mean,stdv))
-            
-        self.logfile.write(": ANGEBOT %s\n" % offer)
-
-            
         self.last_offer = offer
-
-
-
-
-        return '%s' % self.last_offer        
+        return '%s' % self.last_offer   
 
 
 
@@ -241,39 +200,22 @@ class cjtbot1(Bot):
     def process_offer(self, offer):
         """ Evaluate offer and send reply """
 
-        self.logfile.write("-- got offer: %s --\n" % offer)    
+        BRAIN=25
+        THRESHOLD_OF_PAIN=300
+        XRATIO_GREEDY_LIMIT=0.53
+        XRATIO_LIMIT=0.48
 
 
-        #that's always fine
+        reply = REPLY_NEGATIVE
+
+        # that's always ok
         if offer >= 500:
-            self.logfile.write("CASE 1: >500\n")
             reply = REPLY_POSITIVE
 
-        #is it me paying all the time?
-        #elif self.points_ratio<0.45 :
-        elif self.oppopoints_added-self.points_added>1000:
-            self.logfile.write("CASE 2: exploiting me - %s\n" % self.points_ratio)
-            reply = REPLY_NEGATIVE
-        else:
-            
+        # on the bright side of life?
+        elif offer >= THRESHOLD_OF_PAIN and self.points_xratio>XRATIO_GREEDY_LIMIT:
+            reply = REPLY_POSITIVE # big fat bonus
 
-#            (offer,mean,stdv, bsr) = maxexpect(self.my_offers, 1, 600, self.spreading, self.logfile)
-#            self.BOT_SENDS_RANDOM =  self.BOT_ACCEPTS_RANDOM and bsr #avoid falling back in a unlikely case of bad luck
-#            self.logfile.write(" %s %s       %s--\n" % (mean,stdv, bsr))
-
-            #TODO: to be implemented...
-
-
-            reply = REPLY_POSITIVE
-       
-            #1 sendet der nur zufallswerte?
-            #2 oder sendet der immer den gleichen wert?
-            #3 ist es mehr als ich durchschnittlich einstecke?
-            #5 wenn ich ein paar mal ablehne - wird dann die varianz größer? - lohnt sich eine interaktion?
-
-        self.logfile.write("%s %s\n" % (offer, reply))        
-
-            
         self.offers.append((offer, reply))
         return reply
 
@@ -287,117 +229,9 @@ class cjtbot1(Bot):
 
 
 
-
-
-def maxexpect(data, lrange, urange, step, logfile):
-    maxscore=0.0
-    maxval=0.0
-    
-    BOT_IS_RANDOM=False
-
-    s2 = 0.0
-    s = 0.0
-    N=0
-    t=0
-
-
-    histvalues={}
-
-    for lim in xrange(lrange, urange, step):
-        hist=[x for x in data if lim<=x[0]<lim+step]
-
-        expect=0.0
-        total=0.0+sum([x[0] for x in hist])
-        if total>0:
-            expect=0.0+sum([x[0] for x in hist if x[1]=="JA"])/total
-
-        e=(1000-lim)*expect
-
-        logfile.write(": hist %s\t%s\t%s\n" % (lim, expect, e))
-
-        if lim==lrange:
-            if abs(0.5-expect) < 0.1:
-                logfile.write("RANDOM!!!! *******\n")
-                BOT_IS_RANDOM=True
-                return (maxval, 0, 0, True)
-
-
-        #do not cosider hell...
-        if lim>500 and maxscore>0:
-            break
-
-
-        histvalues[lim]=expect
-
-        
-        s2 += expect*expect
-        s += expect
-        N+=1
-    
-        if e>=maxscore:
-            maxscore=e
-            maxval=lim
-
-    (a,b)=statistics(histvalues)
-
-
-
-########################
-    mean = s/N
-    sdev = sqrt((s2-(s*s)/N) /N)
-    
-    logfile.write(" %s  %s    %s %s*****\n" % (a,mean, b, sdev))
-##########################
-
-    
-    return (maxval, mean, sdev, BOT_IS_RANDOM)
-
-
-
-
-def statistics(vallist):
-    if len(vallist)==0:
-        return (0,0)
-    s2 = 0.0
-    s = 0.0
-    N=0.0+len(vallist)
-    
-    for e in vallist:
-        s += e
-        s2 += e * e
-    
-    mean = s/N
-    sdev = sqrt((s2-(s*s)/N) /N)
-    return (mean, sdev)
-
-
-def upperquartil(vallist):
-
-    if len(vallist)==0:
-        return 0
-    
-    tmplist=[x[0] for x in vallist]
-    total=sum(tmplist)
-    if total==0:
-        return 0
-        
-    sortedvallist=sorted(tmplist)[::-1]
-    
-    s = 0
-    for e in sortedvallist:
-        s += e
-        if s> 0.75*total:
-            return e
-
-    return 0
-
-
-
 def main(argv):
-    if "sadistiker" in argv:
-        the_bot = cjtbot1()
-    if "statiker" in argv:
-        the_bot = cjtbot0()
+    # welcome to the show!
+    the_bot = cjtbot1()
     
     
     while True:
